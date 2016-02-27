@@ -17,6 +17,9 @@ import pygraphviz
 # 2. spmtest to extract the overlap smp file
 # Collapsing nodes to outstand bifurcations in the graph
 
+# 2016.02.25
+# depth first search for assembly
+
 color_dict={'89.6':'#DC143C','HXB2':'#FF83FA','JRCSF':'#ED9121','NL43':'#EEEE00','YU2':'#00FF7F'}
 
 def get_seq_from_fa(fa_file,des_file):
