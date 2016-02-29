@@ -23,8 +23,8 @@ import pygraphviz
 color_dict={'89.6':'#DC143C','HXB2':'#FF83FA','JRCSF':'#ED9121','NL43':'#EEEE00','YU2':'#00FF7F'}
 
 def get_seq_from_fa(fa_file,des_file):
-    read_map={}
-    read_name_list=[]
+    read_map={}  # key: read_name, value: read_index
+    read_name_list=[] # key: read_index, value: the corresponding sequence
     count=0
     with open(des_file,'r') as f:
         for line in f:
@@ -48,7 +48,9 @@ def get_seq_from_fa(fa_file,des_file):
     return read_name_list,read_map,seq_dict
 
 def create_graph_with_fq(edge_file,des_list,read_node_dict):
+    # create the initial graph, node name: read_index
     # read_node_dict: store the corresponding node for each read
+    # des_list: the list storing the read_name
 
     G = nx.MultiDiGraph()
 
@@ -128,7 +130,8 @@ def compare_list(list1,list2):
     return sorted(list1)==sorted(list2)
 
 def collapse_graph(G, candidates,read_db, read_node_dict):
-    
+    # node collapsed: combined node
+    # read_node_dict: store the corresponding node for each read, key: read_base, value: [.1 node, .2 node]
     while True:
         nodes_to_combine = []
         if not candidates:
@@ -270,7 +273,7 @@ def is_false_connection(G,node1,node2,paired_end_dict):
     predecessors=G.predecessors(node1)
     return flag
 
-def DFS_iterative(G, start_node, path_dict={},path=[]):
+'''def DFS_iterative(G, start_node, path_dict={},path=[]):
     q=[start_node]
     while q:
         v=q.pop(0)
@@ -279,7 +282,7 @@ def DFS_iterative(G, start_node, path_dict={},path=[]):
             path_dict[(start_node,v)]=path
 
             successors=G.successors(v)
-            if len(successors)>1:
+            if len(successors)>1: '''
 
 
 
