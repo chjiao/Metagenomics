@@ -24,7 +24,7 @@ color_dict={'89.6':'#DC143C','HXB2':'#FF83FA','JRCSF':'#ED9121','NL43':'#EEEE00'
 
 def get_seq_from_fa(fa_file,des_file):
     read_map={}  # key: read_name, value: read_index
-    read_name_list=[] # key: read_index, value: the corresponding sequence
+    read_name_list=[] # read names
     count=0
     with open(des_file,'r') as f:
         for line in f:
@@ -33,7 +33,7 @@ def get_seq_from_fa(fa_file,des_file):
             read_name_list.append(line[:-1])
             count+=1
 
-    seq_dict={}
+    seq_dict={}  # key: read_index, value: the corresponding sequence
     with open(fa_file,'r') as f:
         for line in f:
             if line.startswith('>'):
@@ -230,7 +230,6 @@ def collapse_graph(G, candidates,read_db, read_node_dict):
                 nodes_to_combine.remove(predecessor)
     return G
 
-
 def get_assemblie(G,read_db):
     contigs={}
     if len(G.nodes())>1:
@@ -282,12 +281,47 @@ def is_false_connection(G,node1,node2,paired_end_dict):
             path_dict[(start_node,v)]=path
 
             successors=G.successors(v)
-            if len(successors)>1: '''
+            if len(successors)>1:'''
 
+def DFS_paths_interative(G, start_node, end_node):
+    stack=[(start_node,[start_node])]
+    while stack:
+        (vertex, path)=stack.pop()
+        for succ_node in G.successors(vertex) - set(path):
+            if succ_node==end_node:
+                yield path+[succ_node]
+            else:
+                stack.append((succ_node,path+[succ_node]))
 
+def get_assemblie2(G,read_db):
+    contigs={}
+    if len(G.nodes())>1:
+        starting_nodes=[n for n in G.nodes() if G.in_degree(n)==0]
+        ending_nodes=[n for n in G.nodes() if G.out_degree(n)==0]
 
+        paths=[]
+        for start_node in starting_nodes:
+            for end_node in ending_nodes:
+                two_nodes_paths=[]
+                for path in DFS_paths_interative:
+                    two_nodes_paths.append(path)
 
+                for path in two_nodes_paths:
+                    print path
+                    contig_key='contig_'+':'.join(path)
+                    contigs[contig_key]=read_db[path[0]]
+                    for idx in range(1,len(path)):
+                        prev,current=path[idx-1],path[idx]
+                        seq=read_db[current]
+                        #pdb.set_trace()
+                        overlap=int(G[prev][current]["label"])
+                        contigs[contig_key]+=seq[overlap:]
+                    #contigs.append(contig)
+    else:
+        contig_key='contig_'+G.nodes()[0]
+        contigs[contig_key]=read_db[G.nodes()[0]]
 
+    return contigs
 
 ###########################################################################
 des_file=sys.argv[1]
@@ -331,12 +365,12 @@ for gg in subgraphs:
     #        subgraph_simple.add_edge(pair[0],pair[1],style='dashed',label=str(paired_end_edges[pair]))
 
     ## delete edges with no pair-end supporting
-    for this_edge in subgraph_simple.edges():
+    '''for this_edge in subgraph_simple.edges():
         if not (this_edge[0],this_edge[1]) in paired_end_edges and not (this_edge[1],this_edge[0]) in paired_end_edges:
             #subgraph_simple[this_edge[0]][this_edge[1]]['style']='dashed'
             #subgraph_simple[this_edge[0]][this_edge[1]]['color']='red'
             subgraph_simple.remove_edge(this_edge[0],this_edge[1])
-            subgraph_simple.add_edge(this_edge[0],this_edge[1],style='dashed',color='red')
+            subgraph_simple.add_edge(this_edge[0],this_edge[1],style='dashed',color='red')'''
 
     ## label the nodes with species name and coverage
     node_mapping={}
@@ -357,14 +391,24 @@ for gg in subgraphs:
             print "Node mapping error!"
     subgraph_simple=nx.relabel_nodes(subgraph_simple,node_mapping)
     #nx.write_dot(subgraph,'multi.dot')
+
+    ## 
+    starting_nodes=[n for n in G.nodes() if G.in_degree(n)==0]
+    ending_nodes=[n for n in G.nodes() if G.out_degree(n)==0]
+    for start_node in starting_nodes:
+        for end_node in ending_nodes:
+            paths=DFS_paths_interative(subgraph_simple,start_node,end_node)
+            pdb.set_trace()
+            for path in paths:
+                print path
    
     ## output the paired-end information in a text file
-    new_paired_end_edges={}
+    '''new_paired_end_edges={}
     for pair in paired_end_edges:
         if pair[0] in node_mapping.keys() and pair[1] in node_mapping.keys():
             new_paired_end_edges[pair]=paired_end_edges[pair]
     for pair in sorted(new_paired_end_edges.keys()):
-        f_out.write(node_mapping[pair[0]]+'\t'+node_mapping[pair[1]]+'\t'+str(paired_end_edges[pair])+'\n')
+        f_out.write(node_mapping[pair[0]]+'\t'+node_mapping[pair[1]]+'\t'+str(paired_end_edges[pair])+'\n')'''
 
     ## plot the subgraph
     subgraph=nx.to_agraph(subgraph_simple)
@@ -377,6 +421,7 @@ for gg in subgraphs:
     for contig_key in contigs:
         title='>'+contig_key+'_'+str(len(contigs[contig_key]))+'_'+str(contig_index)
         f_out.write(title+'\n'+contigs[contig_key]+'\n')
-        contig_index+=1
-f_out.close()'''
+        contig_index+=1'''
+
 f_out.close()
+
