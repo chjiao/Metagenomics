@@ -287,11 +287,34 @@ def DFS_paths_interative(G, start_node, end_node):
     stack=[(start_node,[start_node])]
     while stack:
         (vertex, path)=stack.pop()
-        for succ_node in G.successors(vertex) - set(path):
+        for succ_node in set(G.successors(vertex)) - set(path):
+            #pdb.set_trace()
             if succ_node==end_node:
                 yield path+[succ_node]
             else:
                 stack.append((succ_node,path+[succ_node]))
+
+# using paired-end information for paths searching
+# 
+def DFS_paths_paired_end(G, start_node, end_node,paired_end_edges):
+    stack=[(start_node,[start_node])]
+    while stack:
+        (vertex, path)=stack.pop()
+        succ_node_all = set(G.successors(vertex)) - set(path)
+        if len(succ_node_all)>1: # seeing a bifurcation node, multiple successors, judge which one to append
+            for succ_node in succ_node_all:
+                if succ_node==end_node:
+                    yield path+[succ_node]
+                else:
+                    stack.append((succ_node,path+[succ_node]))
+        else: # just one successor, append to the path
+            for succ_node in succ_node_all:
+                if succ_node==end_node:
+                    yield path+[succ_node]
+                else:
+                    stack.append((succ_node,path+[succ_node]))
+
+
 
 def get_assemblie2(G,read_db):
     contigs={}
@@ -373,7 +396,7 @@ for gg in subgraphs:
             subgraph_simple.add_edge(this_edge[0],this_edge[1],style='dashed',color='red')'''
 
     ## label the nodes with species name and coverage
-    node_mapping={}
+    node_mapping={} # key: old node, value: new node
     for this_node in subgraph_simple.nodes():
         species_name=subgraph_simple.node[this_node]['species']
         if len(species_name)>1:
@@ -392,12 +415,20 @@ for gg in subgraphs:
     subgraph_simple=nx.relabel_nodes(subgraph_simple,node_mapping)
     #nx.write_dot(subgraph,'multi.dot')
 
+    # replace the nodes information in paired_end_edges
+    subgraph_paired_end_edges={}
+    for read_base in paired_end_edges:
+        if paired_end_edges[read_base][0] in node_mapping and paired_end_edges[read_base][1] in node_mapping:
+            subgraph_paired_end_edges[read_base]=[node_mapping[paired_end_edges[read_base][0]],node_mapping[paired_end_edges[read_base][1]]]
+        else:
+            print "read_base error!"
+
     ## 
-    starting_nodes=[n for n in G.nodes() if G.in_degree(n)==0]
-    ending_nodes=[n for n in G.nodes() if G.out_degree(n)==0]
+    starting_nodes=[n for n in subgraph_simple.nodes() if subgraph_simple.in_degree(n)==0]
+    ending_nodes=[n for n in subgraph_simple.nodes() if subgraph_simple.out_degree(n)==0]
     for start_node in starting_nodes:
         for end_node in ending_nodes:
-            paths=DFS_paths_interative(subgraph_simple,start_node,end_node)
+            paths=list(DFS_paths_interative(subgraph_simple,start_node,end_node))
             pdb.set_trace()
             for path in paths:
                 print path
