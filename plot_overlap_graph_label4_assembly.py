@@ -300,7 +300,7 @@ def get_paired_score(path,succ_node,paired_end_edges):
         if (this_node,succ_node) in paired_end_edges: 
             paired_score1+=paired_end_edges[(this_node,succ_node)]
         elif (succ_node,this_node) in paired_end_edges:
-            paired_socre1+=paired_end_edges([(this_node,succ_node)])
+            paired_score1+=paired_end_edges[(succ_node,this_node)]
     if (path[-1],succ_node) in paired_end_edges:
         paired_score2+=paired_end_edges[(path[-1],succ_node)]
     elif (succ_node,path[-1]) in paired_end_edges:
@@ -308,10 +308,38 @@ def get_paired_score(path,succ_node,paired_end_edges):
 
     return paired_score1,paired_score2
 
+def get_paired_connection_score(path,succ_node,PE_node_dict):
+    score1,score2=0,0
+    if not succ_node in PE_node_dict:
+        return 0,0
+    else:
+        for this_node in path[0:-1]:
+            if this_node in PE_node_dict and PE_node_dict[this_node]==PE_node_dict[succ_node]:
+                score1+=1
+        if path[-1] in PE_node_dict and PE_node_dict[path[-1]]==PE_node_dict[succ_node]:
+            score2+=1
+        return score1,score2
+
+def create_paired_end_connection(subgraph_paired_end_edges):
+    PE_node_dict={}
+    PE_group=[]
+    PE_G=nx.Graph()
+    idx=0
+    for pair in subgraph_paired_end_edges:
+        PE_G.add_edge(pair[0],pair[1])
+    PE_subgraphs_nodes=nx.connected_components(PE_G)
+    for PE_graph_nodes in PE_subgraphs_nodes:
+        PE_group.append(PE_graph_nodes)
+        for node in PE_graph_nodes:
+            if not node in PE_node_dict:
+                PE_node_dict[node]=idx
+        idx+=1
+    return PE_node_dict,PE_group
 
 # using paired-end information for paths searching
-# 
-def DFS_paths_paired_end(G, start_node, end_node,paired_end_edges):
+# rule 1: if the new node 
+def DFS_paths_paired_end(G, start_node, end_node,paired_end_edges,PE_node_dict):
+    # PE_node_dict: the index of group for each node, key: node, value: index, group: pair-end connected groups
     stack=[(start_node,[start_node])]
     while stack:
         (vertex, path)=stack.pop()
@@ -320,29 +348,40 @@ def DFS_paths_paired_end(G, start_node, end_node,paired_end_edges):
             flag=0
             for succ_node in succ_node_all:
                 score1,score2=get_paired_score(path,succ_node,paired_end_edges)
+                connect_score1,connect_score2=get_paired_connection_score(path,succ_node,PE_node_dict)
                 if succ_node==end_node: # reaching the end
                     if score1>0:
+                        yield path+[succ_node]
+                    elif connect_score1>0:
                         yield path+[succ_node]
                     elif score2>0:
                         #yield path[-1:]+[succ_node]
                         print "1. Path:",path
+                        print "succ_node:",succ_node
+                    elif connect_score2>0:
+                        print "2. Path:",path
                         print "succ_node:",succ_node
                     else:
                         flag+=1
                 else:                    # not reaching the end
                     if score1>0:
                         stack.append((succ_node,path+[succ_node]))
+                    elif connect_score1>0:
+                        stack.append((succ_node,path+[succ_node]))
                     elif score2>0:
                         #pdb.set_trace()
                         #stack.append((succ_node,path[-1:]+[succ_node]))
-                        print "1. Path:",path
+                        print "1_middle. Path:",path
+                        print "succ_node:",succ_node
+                    elif connect_score2>0:
+                        print "2_middle. Path:",path
                         print "succ_node:",succ_node
                     else:
                         flag+=1
                 if flag==len(succ_node_all): # cannot extend to any of the next node
                     #yield path
                     print "Break middle node found!",vertex
-                    pdb.set_trace()
+                    #pdb.set_trace()
 
         else: # just one successor, append to the path
             for succ_node in succ_node_all:
@@ -459,16 +498,26 @@ for gg in subgraphs:
     print "subgraph_paired_end_edges",len(subgraph_paired_end_edges)
 
     ## 
+    PE_node_dict,PE_group=create_paired_end_connection(subgraph_paired_end_edges)
+    # ---- test group output ----
+    f_out_group=open('pair-end_groups.txt','w')
+    for group in PE_group:
+        out_line="--".join(group)
+        f_out_group.write(out_line+'\n')
+    f_out_group.close()
+    # ---- end of test----
+
     starting_nodes=[n for n in subgraph_simple.nodes() if subgraph_simple.in_degree(n)==0]
     ending_nodes=[n for n in subgraph_simple.nodes() if subgraph_simple.out_degree(n)==0]
     for start_node in starting_nodes:
         for end_node in ending_nodes:
-            paths=list(DFS_paths_paired_end(subgraph_simple,start_node,end_node,subgraph_paired_end_edges))
+            print start_node,end_node
+            paths=list(DFS_paths_paired_end(subgraph_simple,start_node,end_node,subgraph_paired_end_edges,PE_node_dict))
             #pdb.set_trace()
             for path in paths:
                 out_path="--".join(path)
                 f_out.write(out_path+'\n')
-                print path
+                #print path
    
     ## output the paired-end information in a text file
     '''new_paired_end_edges={}
@@ -479,10 +528,10 @@ for gg in subgraphs:
         f_out.write(node_mapping[pair[0]]+'\t'+node_mapping[pair[1]]+'\t'+str(paired_end_edges[pair])+'\n')'''
 
     ## plot the subgraph
-    subgraph=nx.to_agraph(subgraph_simple)
+    '''subgraph=nx.to_agraph(subgraph_simple)
     idx+=1
     figname='HIV_collapse_label_large_overlap_paired_end'+str(idx)+'_test.png'
-    subgraph.draw(figname,prog='dot')
+    subgraph.draw(figname,prog='dot')'''
 
     ## assemble contigs from the subgraph
     '''contigs=get_assemblie(subgraph_simple,read_db)  # a dictionary, key: path information, value: assembled sequence
