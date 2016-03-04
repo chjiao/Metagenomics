@@ -294,6 +294,21 @@ def DFS_paths_interative(G, start_node, end_node):
             else:
                 stack.append((succ_node,path+[succ_node]))
 
+def get_paired_score(path,succ_node,paired_end_edges):
+    paired_score1,paired_score2=0,0
+    for this_node in path[0:-1]:
+        if (this_node,succ_node) in paired_end_edges: 
+            paired_score1+=paired_end_edges[(this_node,succ_node)]
+        elif (succ_node,this_node) in paired_end_edges:
+            paired_socre1+=paired_end_edges([(this_node,succ_node)])
+    if (path[-1],succ_node) in paired_end_edges:
+        paired_score2+=paired_end_edges[(path[-1],succ_node)]
+    elif (succ_node,path[-1]) in paired_end_edges:
+        paired_score2+=paired_end_edges[(succ_node,path[-1])]
+
+    return paired_score1,paired_score2
+
+
 # using paired-end information for paths searching
 # 
 def DFS_paths_paired_end(G, start_node, end_node,paired_end_edges):
@@ -302,19 +317,39 @@ def DFS_paths_paired_end(G, start_node, end_node,paired_end_edges):
         (vertex, path)=stack.pop()
         succ_node_all = set(G.successors(vertex)) - set(path)
         if len(succ_node_all)>1: # seeing a bifurcation node, multiple successors, judge which one to append
+            flag=0
             for succ_node in succ_node_all:
-                if succ_node==end_node:
-                    yield path+[succ_node]
-                else:
-                    stack.append((succ_node,path+[succ_node]))
+                score1,score2=get_paired_score(path,succ_node,paired_end_edges)
+                if succ_node==end_node: # reaching the end
+                    if score1>0:
+                        yield path+[succ_node]
+                    elif score2>0:
+                        #yield path[-1:]+[succ_node]
+                        print "1. Path:",path
+                        print "succ_node:",succ_node
+                    else:
+                        flag+=1
+                else:                    # not reaching the end
+                    if score1>0:
+                        stack.append((succ_node,path+[succ_node]))
+                    elif score2>0:
+                        #pdb.set_trace()
+                        #stack.append((succ_node,path[-1:]+[succ_node]))
+                        print "1. Path:",path
+                        print "succ_node:",succ_node
+                    else:
+                        flag+=1
+                if flag==len(succ_node_all): # cannot extend to any of the next node
+                    #yield path
+                    print "Break middle node found!",vertex
+                    pdb.set_trace()
+
         else: # just one successor, append to the path
             for succ_node in succ_node_all:
                 if succ_node==end_node:
                     yield path+[succ_node]
                 else:
                     stack.append((succ_node,path+[succ_node]))
-
-
 
 def get_assemblie2(G,read_db):
     contigs={}
@@ -360,7 +395,8 @@ print "Graph construction finished!"
 
 idx=0
 #f_out=open('HCV_genome_assembl_test.txt','w')
-f_out=open('HIV_paired_end_connections.txt','w')
+#f_out=open('HIV_paired_end_connections.txt','w')
+f_out=open('HIV_paths.txt','w')
 contig_index=0
 for gg in subgraphs:
     print "The nodes of original graph:",len(gg)
@@ -417,20 +453,21 @@ for gg in subgraphs:
 
     # replace the nodes information in paired_end_edges
     subgraph_paired_end_edges={}
-    for read_base in paired_end_edges:
-        if paired_end_edges[read_base][0] in node_mapping and paired_end_edges[read_base][1] in node_mapping:
-            subgraph_paired_end_edges[read_base]=[node_mapping[paired_end_edges[read_base][0]],node_mapping[paired_end_edges[read_base][1]]]
-        else:
-            print "read_base error!"
+    for key in paired_end_edges:
+        if key[0] in node_mapping and key[1] in node_mapping:
+            subgraph_paired_end_edges[(node_mapping[key[0]],node_mapping[key[1]])]=paired_end_edges[key]
+    print "subgraph_paired_end_edges",len(subgraph_paired_end_edges)
 
     ## 
     starting_nodes=[n for n in subgraph_simple.nodes() if subgraph_simple.in_degree(n)==0]
     ending_nodes=[n for n in subgraph_simple.nodes() if subgraph_simple.out_degree(n)==0]
     for start_node in starting_nodes:
         for end_node in ending_nodes:
-            paths=list(DFS_paths_interative(subgraph_simple,start_node,end_node))
-            pdb.set_trace()
+            paths=list(DFS_paths_paired_end(subgraph_simple,start_node,end_node,subgraph_paired_end_edges))
+            #pdb.set_trace()
             for path in paths:
+                out_path="--".join(path)
+                f_out.write(out_path+'\n')
                 print path
    
     ## output the paired-end information in a text file
