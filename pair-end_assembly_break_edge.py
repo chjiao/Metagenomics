@@ -341,6 +341,7 @@ def create_paired_end_connection(subgraph_paired_end_edges):
 # using paired-end information for paths searching
 # rule 1: if the new node has connection to the path except its direct predecessor (denote as pre-path), add the new node to the path
 # rule 2: if the new node has no connection to the pre-path but the direct predecessor, do not add the new node to the path
+# rule 3: if the new node has no connection to the path, but its predecessor has only one out edge, add the new node to the path
 def DFS_paths_paired_end(G, start_node, end_node,paired_end_edges,PE_node_dict,candidate_delete_edge):
     # PE_node_dict: the index of group for each node, key: node, value: index, group: pair-end connected groups
     stack=[(start_node,[start_node])]
@@ -348,6 +349,10 @@ def DFS_paths_paired_end(G, start_node, end_node,paired_end_edges,PE_node_dict,c
     while stack:
         (vertex, path)=stack.pop()
         succ_node_all = set(G.successors(vertex)) - set(path)
+        if len(succ_node_all)==0 and len(G.successors(vertex))>0:            # finding a cycle
+            print "Finding a cycle!",path
+            yield path
+
         if len(succ_node_all)>1: # seeing a bifurcation node, multiple successors, judge which one to append
             flag=0
             for succ_node in succ_node_all:
@@ -402,15 +407,12 @@ def DFS_paths_paired_end(G, start_node, end_node,paired_end_edges,PE_node_dict,c
                     print "Break middle node found!",vertex
                     #pdb.set_trace()
 
-        elif len(succ_node_all)==1: # just one successor, append to the path
+        else: # just one successor, append to the path
             for succ_node in succ_node_all:
                 if succ_node==end_node:
                     yield path+[succ_node]
                 else:
                     stack.append((succ_node,path+[succ_node]))
-        else:                       # finding a cycle
-            print "Finding a cycle!",path
-            yield path
 
 # with just the start_node, find all the paths
 def DFS_paths_paired_end2(G, start_node, paired_end_edges,PE_node_dict,candidate_delete_edge):
@@ -618,18 +620,19 @@ for gg in subgraphs:
                 #print path
 
     ## remove unsupported edges
-    for edge in candidate_delete_edges:
+    '''for edge in candidate_delete_edges:
         if edge[1] not in assembled_nodes:
             subgraph_simple.remove_edge(edge[0],edge[1])
-            #subgraph_simple.add_edge(edge[0],edge[1],color='red',penwidth='2')
+            #subgraph_simple.add_edge(edge[0],edge[1],color='red',penwidth='2')'''
 
     ## new starting nodes
-    starting_nodes2=[n for n in subgraph_simple.nodes() if subgraph_simple.in_degree(n)==0]
-    ending_nodes2=[n for n in subgraph_simple.nodes() if subgraph_simple.out_degree(n)==0]
-    new_starts=list(set(starting_nodes2)-set(starting_nodes))
+    new_starts=[]
+    for edge in candidate_delete_edges:
+        if edge[1] not in assembled_nodes:
+            new_starts.append(edge[1])
     print "New starting nodes:",new_starts
     for start_node in new_starts:
-        for end_node in ending_nodes2:
+        for end_node in ending_nodes:
             print "Begin a new group of start and end nodes:",start_node,end_node
             paths=list(DFS_paths_paired_end(subgraph_simple,start_node,end_node,subgraph_paired_end_edges,PE_node_dict,candidate_delete_edges))
             #pdb.set_trace()
@@ -642,7 +645,7 @@ for gg in subgraphs:
     if len(set(subgraph_simple.nodes())-assembled_nodes)>0:
         print "Unassembled nodes!",set(subgraph_simple.nodes())-assembled_nodes
     
-    pdb.set_trace() 
+    #pdb.set_trace() 
     ## output the paired-end information in a text file
     '''new_paired_end_edges={}
     for pair in paired_end_edges:
