@@ -19,6 +19,8 @@ import pygraphviz
 
 # 2016.02.25
 # depth first search for assembly
+# 2016.03.06
+# break some edges based on pair-end infor
 
 color_dict={'89.6':'#DC143C','HXB2':'#FF83FA','JRCSF':'#ED9121','NL43':'#EEEE00','YU2':'#00FF7F'}
 
@@ -339,15 +341,18 @@ def create_paired_end_connection(subgraph_paired_end_edges):
 # using paired-end information for paths searching
 # rule 1: if the new node has connection to the path except its direct predecessor (denote as pre-path), add the new node to the path
 # rule 2: if the new node has no connection to the pre-path but the direct predecessor, do not add the new node to the path
-def DFS_paths_paired_end(G, start_node, end_node,paired_end_edges,PE_node_dict):
+def DFS_paths_paired_end(G, start_node, end_node,paired_end_edges,PE_node_dict,candidate_delete_edge):
     # PE_node_dict: the index of group for each node, key: node, value: index, group: pair-end connected groups
     stack=[(start_node,[start_node])]
+    #candidate_delete_edge={}:  if one node has no pair-end connections to the path, consider to delete the overlap edge
     while stack:
         (vertex, path)=stack.pop()
         succ_node_all = set(G.successors(vertex)) - set(path)
         if len(succ_node_all)>1: # seeing a bifurcation node, multiple successors, judge which one to append
             flag=0
             for succ_node in succ_node_all:
+                #if start_node=='[HXB2][28.11][370]8318|51' and succ_node=='[HXB2][85.96][1268]6164|544' and vertex=='[HXB2,NL43][27.78][288]8864|39':
+                #    pdb.set_trace()
                 score1,score2=get_paired_score(path,succ_node,paired_end_edges)
                 connect_score1,connect_score2=get_paired_connection_score(path,succ_node,PE_node_dict)
                 if succ_node==end_node: # reaching the end
@@ -356,42 +361,129 @@ def DFS_paths_paired_end(G, start_node, end_node,paired_end_edges,PE_node_dict):
                     elif connect_score1>0:
                         yield path+[succ_node]
                     elif score2>0:
+                        print "1"
                         #yield path[-1:]+[succ_node]
-                        print "1. Path:",path
-                        print "succ_node:",succ_node
+                        #print "1. Path:",path
+                        #print "succ_node:",succ_node
                     elif connect_score2>0:
-                        print "2. Path:",path
-                        print "succ_node:",succ_node
+                        print "1"
+                        #print "2. Path:",path
+                        #print "succ_node:",succ_node
                     else:
                         flag+=1
                         print "No connection succint node (1):",path,succ_node
+                        #G.remove_edge(path[-1],succ_node)  
+                        if (path[-1],succ_node) not in candidate_delete_edge:
+                            candidate_delete_edge[(path[-1],succ_node)]=succ_node
                 else:                    # not reaching the end
                     if score1>0:
                         stack.append((succ_node,path+[succ_node]))
                     elif connect_score1>0:
                         stack.append((succ_node,path+[succ_node]))
                     elif score2>0:
+                        print "1"
                         #pdb.set_trace()
                         #stack.append((succ_node,path[-1:]+[succ_node]))
-                        print "1_middle. Path:",path
-                        print "succ_node:",succ_node
+                        #print "1_middle. Path:",path
+                        #print "succ_node:",succ_node
                     elif connect_score2>0:
-                        print "2_middle. Path:",path
-                        print "succ_node:",succ_node
+                        print "1"
+                        #print "2_middle. Path:",path
+                        #print "succ_node:",succ_node
                     else:
                         flag+=1
                         print "No connection succint node (2_middle):",path,succ_node
+                        #G.remove_edge(path[-1],succ_node)  # no connection to either pre-path or predecessor, remove the edge
+                        #G.add_edge(path[-1],succ_node,color='red',penwidth='2')
+                        if (path[-1],succ_node) not in candidate_delete_edge:
+                            candidate_delete_edge[(path[-1],succ_node)]=succ_node
                 if flag==len(succ_node_all): # cannot extend to any of the next node
                     #yield path
                     print "Break middle node found!",vertex
                     #pdb.set_trace()
 
-        else: # just one successor, append to the path
+        elif len(succ_node_all)==1: # just one successor, append to the path
             for succ_node in succ_node_all:
                 if succ_node==end_node:
                     yield path+[succ_node]
                 else:
                     stack.append((succ_node,path+[succ_node]))
+        else:                       # finding a cycle
+            print "Finding a cycle!",path
+            yield path
+
+# with just the start_node, find all the paths
+def DFS_paths_paired_end2(G, start_node, paired_end_edges,PE_node_dict,candidate_delete_edge):
+    # PE_node_dict: the index of group for each node, key: node, value: index, group: pair-end connected groups
+    stack=[(start_node,[start_node])]
+    #candidate_delete_edge={}:  if one node has no pair-end connections to the path, consider to delete the overlap edge
+    while stack:
+        (vertex, path)=stack.pop()
+        succ_node_all = set(G.successors(vertex)) - set(path)
+        if len(succ_node_all)>1: # seeing a bifurcation node, multiple successors, judge which one to append
+            flag=0
+            for succ_node in succ_node_all:
+                if start_node=='[HXB2][28.11][370]8318|51' and succ_node=='[HXB2][85.96][1268]6164|544' and vertex=='[HXB2,NL43][27.78][288]8864|39':
+                    pdb.set_trace()
+                score1,score2=get_paired_score(path,succ_node,paired_end_edges)
+                connect_score1,connect_score2=get_paired_connection_score(path,succ_node,PE_node_dict)
+                if G.out_degree(succ_node)==0: # reaching the end
+                    if score1>0:
+                        yield path+[succ_node]
+                    elif connect_score1>0:
+                        yield path+[succ_node]
+                    elif score2>0:
+                        print "1"
+                        #yield path[-1:]+[succ_node]
+                        #print "1. Path:",path
+                        #print "succ_node:",succ_node
+                    elif connect_score2>0:
+                        print "1"
+                        #print "2. Path:",path
+                        #print "succ_node:",succ_node
+                    else:
+                        flag+=1
+                        print "No connection succint node (1):",path,succ_node
+                        #G.remove_edge(path[-1],succ_node)  
+                        if (path[-1],succ_node) not in candidate_delete_edge:
+                            candidate_delete_edge[(path[-1],succ_node)]=succ_node
+                else:                    # not reaching the end
+                    if score1>0:
+                        stack.append((succ_node,path+[succ_node]))
+                    elif connect_score1>0:
+                        stack.append((succ_node,path+[succ_node]))
+                    elif score2>0:
+                        print "1"
+                        #pdb.set_trace()
+                        #stack.append((succ_node,path[-1:]+[succ_node]))
+                        #print "1_middle. Path:",path
+                        #print "succ_node:",succ_node
+                    elif connect_score2>0:
+                        print "1"
+                        #print "2_middle. Path:",path
+                        #print "succ_node:",succ_node
+                    else:
+                        flag+=1
+                        print "No connection succint node (2_middle):",path,succ_node
+                        #G.remove_edge(path[-1],succ_node)  # no connection to either pre-path or predecessor, remove the edge
+                        #G.add_edge(path[-1],succ_node,color='red',penwidth='2')
+                        if (path[-1],succ_node) not in candidate_delete_edge:
+                            candidate_delete_edge[(path[-1],succ_node)]=succ_node
+                if flag==len(succ_node_all): # cannot extend to any of the next node
+                    #yield path
+                    print "Break middle node found!",vertex
+                    #pdb.set_trace()
+
+        elif len(succ_node_all)==1: # just one successor, append to the path
+            for succ_node in succ_node_all:
+                if G.out_degree(succ_node)==0:
+                    yield path+[succ_node]
+                else:
+                    stack.append((succ_node,path+[succ_node]))
+        else:                       # finding a cycle, break and report the path
+            print "Finding a cycle:", path
+            yield path 
+
 
 def get_assemblie2(G,read_db):
     contigs={}
@@ -461,9 +553,9 @@ for gg in subgraphs:
         else:
             paired_end_edges[(node_1,node_2)]+=1
 
-    #for pair in paired_end_edges:
-    #    if pair[0] in subgraph_simple.nodes() and pair[1] in subgraph_simple.nodes():
-    #        subgraph_simple.add_edge(pair[0],pair[1],style='dashed',label=str(paired_end_edges[pair]))
+    '''for pair in paired_end_edges:
+        if pair[0] in subgraph_simple.nodes() and pair[1] in subgraph_simple.nodes():
+            subgraph_simple.add_edge(pair[0],pair[1],style='dashed',label=str(paired_end_edges[pair]))'''
 
     ## delete edges with no pair-end supporting
     '''for this_edge in subgraph_simple.edges():
@@ -512,16 +604,45 @@ for gg in subgraphs:
 
     starting_nodes=[n for n in subgraph_simple.nodes() if subgraph_simple.in_degree(n)==0]
     ending_nodes=[n for n in subgraph_simple.nodes() if subgraph_simple.out_degree(n)==0]
+    assembled_nodes=set([])
+    candidate_delete_edges={}
     for start_node in starting_nodes:
         for end_node in ending_nodes:
             print "Begin a new group of start and end nodes:",start_node,end_node
-            paths=list(DFS_paths_paired_end(subgraph_simple,start_node,end_node,subgraph_paired_end_edges,PE_node_dict))
+            paths=list(DFS_paths_paired_end(subgraph_simple,start_node,end_node,subgraph_paired_end_edges,PE_node_dict,candidate_delete_edges))
             #pdb.set_trace()
             for path in paths:
+                assembled_nodes=assembled_nodes.union(set(path))
                 out_path="--".join(path)
                 f_out.write(out_path+'\n')
                 #print path
-   
+
+    ## remove unsupported edges
+    for edge in candidate_delete_edges:
+        if edge[1] not in assembled_nodes:
+            subgraph_simple.remove_edge(edge[0],edge[1])
+            #subgraph_simple.add_edge(edge[0],edge[1],color='red',penwidth='2')
+
+    ## new starting nodes
+    starting_nodes2=[n for n in subgraph_simple.nodes() if subgraph_simple.in_degree(n)==0]
+    ending_nodes2=[n for n in subgraph_simple.nodes() if subgraph_simple.out_degree(n)==0]
+    new_starts=list(set(starting_nodes2)-set(starting_nodes))
+    print "New starting nodes:",new_starts
+    for start_node in new_starts:
+        for end_node in ending_nodes2:
+            print "Begin a new group of start and end nodes:",start_node,end_node
+            paths=list(DFS_paths_paired_end(subgraph_simple,start_node,end_node,subgraph_paired_end_edges,PE_node_dict,candidate_delete_edges))
+            #pdb.set_trace()
+            for path in paths:
+                assembled_nodes=assembled_nodes.union(set(path))
+                out_path="--".join(path)
+                f_out.write(out_path+'\n')
+                print "New Path:",path
+
+    if len(set(subgraph_simple.nodes())-assembled_nodes)>0:
+        print "Unassembled nodes!",set(subgraph_simple.nodes())-assembled_nodes
+    
+    pdb.set_trace() 
     ## output the paired-end information in a text file
     '''new_paired_end_edges={}
     for pair in paired_end_edges:
@@ -531,9 +652,9 @@ for gg in subgraphs:
         f_out.write(node_mapping[pair[0]]+'\t'+node_mapping[pair[1]]+'\t'+str(paired_end_edges[pair])+'\n')'''
 
     ## plot the subgraph
-    '''subgraph=nx.to_agraph(subgraph_simple)
+    '''subgraph=nx.drawing.nx_agraph.to_agraph(subgraph_simple)
     idx+=1
-    figname='HIV_collapse_label_large_overlap_paired_end'+str(idx)+'_test.png'
+    figname='HIV_collapse_label_large_overlap_paired_end_break_edge_'+str(2)+'_test.png'
     subgraph.draw(figname,prog='dot')'''
 
     ## assemble contigs from the subgraph
