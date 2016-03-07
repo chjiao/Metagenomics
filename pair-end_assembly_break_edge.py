@@ -320,6 +320,7 @@ def get_paired_connection_score(path,succ_node,PE_node_dict):
                 score1+=1
         if path[-1] in PE_node_dict and PE_node_dict[path[-1]]==PE_node_dict[succ_node]:
             score2+=1
+        score1=float(score1)/len(path[0:-1])
         return score1,score2
 
 def create_paired_end_connection(subgraph_paired_end_edges):
@@ -349,21 +350,47 @@ def DFS_paths_paired_end(G, start_node, end_node,paired_end_edges,PE_node_dict,c
     while stack:
         (vertex, path)=stack.pop()
         succ_node_all = set(G.successors(vertex)) - set(path)
-        if len(succ_node_all)==0 and len(G.successors(vertex))>0:            # finding a cycle
+        if len(succ_node_all)<len(G.successors(vertex)):            # finding a cycle
             print "Finding a cycle!",path
             yield path
+            continue
+        
+        ## if multiple succesessors with weak connections, choose the maximum one
+        max_connect_score1=0
+        extend_node=''
+        if len(succ_node_all)>1:
+            for succ_node in succ_node_all:
+                connect_score1,connect_score2=get_paired_connection_score(path,succ_node,PE_node_dict)
+                if connect_score1>max_connect_score1:
+                    max_connect_score1=connect_score1
+                    extend_node=succ_node
+        if max_connect_score1>0 and max_connect_score1<=0.45:
+            if extend_node==end_node:
+                yield path+[extend_node]
+            else:
+                stack.append((extend_node,path+[extend_node]))
+            continue
+
+        #if start_node=='[YU2][87.45][2095]21064|915' and vertex=='[YU2][94.84][2598]18551|1231':
+        #    pdb.set_trace()
+        #if start_node=='[NL43][53.46][621]15156|165' and vertex=='[NL43,HXB2][10.91][220]7795|11':
+        #    pdb.set_trace()
+        if start_node=='[YU2][95.23][4566]19263|2173' and vertex=='[JRCSF,YU2,89.6][1.99][201]292|1':
+            pdb.set_trace()
 
         if len(succ_node_all)>1: # seeing a bifurcation node, multiple successors, judge which one to append
             flag=0
             for succ_node in succ_node_all:
                 #if start_node=='[HXB2][28.11][370]8318|51' and succ_node=='[HXB2][85.96][1268]6164|544' and vertex=='[HXB2,NL43][27.78][288]8864|39':
                 #    pdb.set_trace()
+                #if start_node=='[YU2][87.45][2095]21064|915' and succ_node=='[HXB2][89.08][2133]6753|949' and vertex=='[YU2][94.84][2598]18551|1231':
+                #    pdb.set_trace()
                 score1,score2=get_paired_score(path,succ_node,paired_end_edges)
                 connect_score1,connect_score2=get_paired_connection_score(path,succ_node,PE_node_dict)
                 if succ_node==end_node: # reaching the end
                     if score1>0:
                         yield path+[succ_node]
-                    elif connect_score1>0:
+                    elif connect_score1>0.45: # set the cutoff 
                         yield path+[succ_node]
                     elif score2>0:
                         print "1"
@@ -383,7 +410,7 @@ def DFS_paths_paired_end(G, start_node, end_node,paired_end_edges,PE_node_dict,c
                 else:                    # not reaching the end
                     if score1>0:
                         stack.append((succ_node,path+[succ_node]))
-                    elif connect_score1>0:
+                    elif connect_score1>0.45:
                         stack.append((succ_node,path+[succ_node]))
                     elif score2>0:
                         print "1"
@@ -408,11 +435,12 @@ def DFS_paths_paired_end(G, start_node, end_node,paired_end_edges,PE_node_dict,c
                     #pdb.set_trace()
 
         else: # just one successor, append to the path
-            for succ_node in succ_node_all:
-                if succ_node==end_node:
-                    yield path+[succ_node]
-                else:
-                    stack.append((succ_node,path+[succ_node]))
+            if G.out_degree(vertex)==1:
+                for succ_node in succ_node_all:
+                    if succ_node==end_node:
+                        yield path+[succ_node]
+                    else:
+                        stack.append((succ_node,path+[succ_node]))
 
 # with just the start_node, find all the paths
 def DFS_paths_paired_end2(G, start_node, paired_end_edges,PE_node_dict,candidate_delete_edge):
@@ -517,6 +545,28 @@ def get_assemblie2(G,read_db):
 
     return contigs
 
+def get_assemblie3(G,paths,read_db):
+    contigs={}
+    if len(G.nodes())>1:
+        for path in paths:
+            print path
+            contig_key='contig_'+':'.join(path)
+            contigs[contig_key]=read_db[path[0]]
+            for idx in range(1,len(path)):
+                prev,current=path[idx-1],path[idx]
+                seq=read_db[current]
+                #pdb.set_trace()
+                #if not "label" in G[prev][current]:
+                #    pdb.set_trace()
+                overlap=int(G[prev][current][0]["label"])
+                contigs[contig_key]+=seq[overlap:]
+            #contigs.append(contig)
+    else:
+        contig_key='contig_'+G.nodes()[0]
+        contigs[contig_key]=read_db[G.nodes()[0]]
+
+    return contigs
+
 ###########################################################################
 des_file=sys.argv[1]
 edge_file=sys.argv[2]
@@ -587,6 +637,11 @@ for gg in subgraphs:
     subgraph_simple=nx.relabel_nodes(subgraph_simple,node_mapping)
     #nx.write_dot(subgraph,'multi.dot')
 
+    ## relabel the read_db
+    new_read_db={}
+    for this_node in node_mapping:
+        new_read_db[node_mapping[this_node]]=read_db[this_node]
+
     # replace the nodes information in paired_end_edges
     subgraph_paired_end_edges={}
     for key in paired_end_edges:
@@ -603,7 +658,8 @@ for gg in subgraphs:
         f_out_group.write(out_line+'\n')
     f_out_group.close()
     # ---- end of test----
-
+    
+    all_paths=[]
     starting_nodes=[n for n in subgraph_simple.nodes() if subgraph_simple.in_degree(n)==0]
     ending_nodes=[n for n in subgraph_simple.nodes() if subgraph_simple.out_degree(n)==0]
     assembled_nodes=set([])
@@ -614,9 +670,11 @@ for gg in subgraphs:
             paths=list(DFS_paths_paired_end(subgraph_simple,start_node,end_node,subgraph_paired_end_edges,PE_node_dict,candidate_delete_edges))
             #pdb.set_trace()
             for path in paths:
+                if not path in all_paths:
+                    all_paths.append(path)
                 assembled_nodes=assembled_nodes.union(set(path))
-                out_path="--".join(path)
-                f_out.write(out_path+'\n')
+                #out_path="--".join(path)
+                #f_out.write(out_path+'\n')
                 #print path
 
     ## remove unsupported edges
@@ -637,10 +695,14 @@ for gg in subgraphs:
             paths=list(DFS_paths_paired_end(subgraph_simple,start_node,end_node,subgraph_paired_end_edges,PE_node_dict,candidate_delete_edges))
             #pdb.set_trace()
             for path in paths:
+                if not path in all_paths:
+                    all_paths.append(path)
                 assembled_nodes=assembled_nodes.union(set(path))
-                out_path="--".join(path)
-                f_out.write(out_path+'\n')
-                print "New Path:",path
+
+    for path in all_paths:
+        out_path="--".join(path)
+        f_out.write(out_path+'\n')
+        #print "New Path:",path
 
     if len(set(subgraph_simple.nodes())-assembled_nodes)>0:
         print "Unassembled nodes!",set(subgraph_simple.nodes())-assembled_nodes
@@ -661,11 +723,12 @@ for gg in subgraphs:
     subgraph.draw(figname,prog='dot')'''
 
     ## assemble contigs from the subgraph
-    '''contigs=get_assemblie(subgraph_simple,read_db)  # a dictionary, key: path information, value: assembled sequence
+    f_out2=open('HIV_contigs.txt','w')
+    contigs=get_assemblie3(subgraph_simple,all_paths,new_read_db)  # a dictionary, key: path information, value: assembled sequence
     for contig_key in contigs:
         title='>'+contig_key+'_'+str(len(contigs[contig_key]))+'_'+str(contig_index)
-        f_out.write(title+'\n'+contigs[contig_key]+'\n')
-        contig_index+=1'''
-
+        f_out2.write(title+'\n'+contigs[contig_key]+'\n')
+        contig_index+=1
+    f_out2.close()
 f_out.close()
 
